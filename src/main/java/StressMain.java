@@ -275,20 +275,21 @@ public class StressMain {
 				log.info("Restarting node: "+type.restartSolrNode);
 
 				String nodeIndex = resolveString(resolveString(type.restartSolrNode, params), workflow.globalConstants);
-				long taskStart = System.currentTimeMillis();
+				final long taskStartMillis = System.currentTimeMillis();
 				log.info("Restarting node "+Integer.valueOf(nodeIndex));
 				SolrNode node = cloud.nodes.get(Integer.valueOf(nodeIndex) - 1);
 				log.info("Restarting " + node.getNodeName());
 
-				long stopTime = -1000, startTime = -1000;
+				long elapsedStopTimeMillis = -1000, elapsedStartTimeMillis = -1000;
 				try {
 					if (node instanceof LocalSolrNode) {
-					    stopTime = System.currentTimeMillis();
+						final long initiateSolrStopTimeMillis = System.currentTimeMillis();
 					    node.stop();
-					    stopTime = System.currentTimeMillis() - stopTime;
-					    startTime = System.currentTimeMillis();
+					    elapsedStopTimeMillis = System.currentTimeMillis() - initiateSolrStopTimeMillis;
+
+						final long initiateSolrStartTimeMillis = System.currentTimeMillis();
 					    node.start();
-					    startTime = System.currentTimeMillis() - startTime;
+					    elapsedStartTimeMillis = System.currentTimeMillis() - initiateSolrStartTimeMillis;
 					} else {
 						node.restart();
 					}
@@ -302,7 +303,7 @@ public class StressMain {
 				// Up to this point the 'startTime' variable holds the (correctly calculated) ms required to start Solr, let's call this value 'S'
 				if (type.awaitRecoveries) {
 					// NOTE: startTime will now contain S+C1, where C1 is the current timestamp
-				    startTime += System.currentTimeMillis();
+				    elapsedStartTimeMillis += System.currentTimeMillis();
 					try (CloudSolrClient client = new CloudSolrClient.Builder().withZkHost(cloud.getZookeeperUrl()).build();) {
 						int numInactive = 0;
 						do {
@@ -318,7 +319,7 @@ public class StressMain {
 					// startTime = (S + C1) - (C1 + r)
 					// startTime = (S + C1) - C1 - r
 					// startTime = S - r
-					startTime = startTime - System.currentTimeMillis();
+					elapsedStartTimeMillis = elapsedStartTimeMillis - System.currentTimeMillis();
 				}
 				long heap = -1;
 				try {
@@ -336,10 +337,10 @@ public class StressMain {
 				long taskEnd = System.currentTimeMillis();
 
 				finalResults.get(taskName).add(Map.of(
-						"total-time", (taskEnd-taskStart)/1000.0, 
-						"start-time", (taskStart- executionStart)/1000.0, 
-						"node-shutdown", stopTime/1000.0,
-						"node-startup", startTime/1000.0,
+						"total-time", (taskEnd-taskStartMillis)/1000.0,
+						"start-time", (taskStartMillis- executionStart)/1000.0,
+						"node-shutdown", elapsedStopTimeMillis/1000.0,
+						"node-startup", elapsedStartTimeMillis/1000.0,
 						"heap-mb", heap==-1? -1: heap/1024.0/1024.0,
 						"end-time", (taskEnd- executionStart)/1000.0));
 
