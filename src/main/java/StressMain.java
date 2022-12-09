@@ -324,15 +324,15 @@ public class StressMain {
 					heap = minHeap;
 
 				} catch (Exception ex) {}
-				long taskEnd = System.currentTimeMillis();
+				long taskEndMillis = System.currentTimeMillis();
 
 				finalResults.get(taskName).add(Map.of(
-						"total-time", (taskEnd-taskStartMillis)/1000.0,
 						"start-time", (taskStartMillis- executionStart)/1000.0,
+						"end-time", (taskEndMillis- executionStart)/1000.0,
+						"total-time", (taskEndMillis-taskStartMillis)/1000.0,
 						"node-shutdown", elapsedStopTimeMillis/1000.0,
 						"node-startup", elapsedStartTimeMillis/1000.0,
-						"heap-mb", heap==-1? -1: heap/1024.0/1024.0,
-						"end-time", (taskEnd- executionStart)/1000.0));
+						"heap-mb", heap==-1? -1: heap/1024.0/1024.0));
 
 			} else if (type.indexBenchmark != null) {
 				log.info("Running benchmarking task: "+ type.indexBenchmark.datasetFile);
