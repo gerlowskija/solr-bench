@@ -297,13 +297,8 @@ public class StressMain {
 					ex.printStackTrace();
 				}
 
-				// NOTE: The below modification of startTime in an attempt to incorporate recovery time is wrong, even
-				// producing negative values in some cases!
-				//
-				// Up to this point the 'startTime' variable holds the (correctly calculated) ms required to start Solr, let's call this value 'S'
 				if (type.awaitRecoveries) {
-					// NOTE: startTime will now contain S+C1, where C1 is the current timestamp
-				    elapsedStartTimeMillis += System.currentTimeMillis();
+					final long initiateRecoveryTimeMillis = System.currentTimeMillis();
 					try (CloudSolrClient client = new CloudSolrClient.Builder().withZkHost(cloud.getZookeeperUrl()).build();) {
 						int numInactive = 0;
 						do {
@@ -312,14 +307,9 @@ public class StressMain {
 					} catch (Exception ex) {
 						ex.printStackTrace();
 					}
-					// NOTE The 'startTime' variable after this line will hold: (S+C1) - C2, where C2 is the current timestamp
-					// C2 is always bigger than C1, by however long it took Solr's cores to recover ('r')
-					// So the net effect of this line is to SUBTRACT the recovery time from our Solr startup time, instead of ADDING it:
-					// startTime = (S + C1) - C2
-					// startTime = (S + C1) - (C1 + r)
-					// startTime = (S + C1) - C1 - r
-					// startTime = S - r
-					elapsedStartTimeMillis = elapsedStartTimeMillis - System.currentTimeMillis();
+					final long completeRecoveryTimeMillis = System.currentTimeMillis();
+					final long elapsedRecoveryTimeMillis = completeRecoveryTimeMillis - initiateRecoveryTimeMillis;
+					elapsedStartTimeMillis = elapsedStartTimeMillis + elapsedRecoveryTimeMillis;
 				}
 				long heap = -1;
 				try {
