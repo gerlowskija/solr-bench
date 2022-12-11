@@ -36,6 +36,7 @@ import org.apache.solr.benchmarks.solrcloud.GenericSolrNode;
 import org.apache.solr.benchmarks.solrcloud.LocalSolrNode;
 import org.apache.solr.benchmarks.solrcloud.SolrCloud;
 import org.apache.solr.benchmarks.solrcloud.SolrNode;
+import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
@@ -100,6 +101,7 @@ public class StressMain {
 	}
 
 	private static void executeWorkflow(Workflow workflow, SolrCloud cloud) throws InterruptedException, JsonGenerationException, JsonMappingException, IOException {
+		log.info("JEGERLOW 0");
 		Map<String, AtomicInteger> globalVariables = new ConcurrentHashMap<String, AtomicInteger>();
 
 		// Initialize the common threadpools
@@ -133,6 +135,7 @@ public class StressMain {
 
 		List<Task> commonTasks = new ArrayList<>();
 
+		log.info("JEGERLOW 1");
 		for (String taskName: workflow.executionPlan.keySet()) {
 			TaskInstance instance = workflow.executionPlan.get(taskName);
 			TaskType type = workflow.taskTypes.get(instance.type);
@@ -169,6 +172,8 @@ public class StressMain {
 			// if not a common threadpool, shutdown the executor
 			if (!commonThreadpoolTask) executor.shutdown();
 		}
+		log.info("JEGERLOW 2");
+
 
 		Collections.shuffle(commonTasks);
 		log.info("Order of operations submitted via common threadpools: "+commonTasks);
@@ -176,6 +181,8 @@ public class StressMain {
 			taskFutures.get(task.name)
 					.add(task.exe.submit(task.callable));
 		}
+		log.info("JEGERLOW 3");
+
 
 		for (String tp: commonThreadpools.keySet())
 			commonThreadpools.get(tp).shutdown();
@@ -184,14 +191,17 @@ public class StressMain {
 			taskExecutors.get(task).awaitTermination(Integer.MAX_VALUE, TimeUnit.SECONDS);
 		}
 
+		log.info("JEGERLOW 4");
 		for (String tp: commonThreadpools.keySet())
 			commonThreadpools.get(tp).awaitTermination(Integer.MAX_VALUE, TimeUnit.SECONDS);
 
+		log.info("JEGERLOW 5");
 		// Stop metrics collection
 		if (workflow.metrics != null) {
 			metricsCollector.stop();
 			metricsThread.stop();
 		}
+		log.info("JEGERLOW 6");
 
 		log.info("Final results: "+finalResults);
 		new ObjectMapper().writeValue(new File("results-stress.json"), finalResults);
@@ -297,6 +307,7 @@ public class StressMain {
 					ex.printStackTrace();
 				}
 
+				long elapsedRecoveryTimeMillis = 0;
 				if (type.awaitRecoveries) {
 					final long initiateRecoveryTimeMillis = System.currentTimeMillis();
 					try (CloudSolrClient client = new CloudSolrClient.Builder().withZkHost(cloud.getZookeeperUrl()).build();) {
@@ -308,8 +319,8 @@ public class StressMain {
 						ex.printStackTrace();
 					}
 					final long completeRecoveryTimeMillis = System.currentTimeMillis();
-					final long elapsedRecoveryTimeMillis = completeRecoveryTimeMillis - initiateRecoveryTimeMillis;
-					elapsedStartTimeMillis = elapsedStartTimeMillis + elapsedRecoveryTimeMillis;
+					elapsedRecoveryTimeMillis = completeRecoveryTimeMillis - initiateRecoveryTimeMillis;
+					//elapsedStartTimeMillis = elapsedStartTimeMillis + elapsedRecoveryTimeMillis;
 				}
 				long heap = -1;
 				try {
@@ -332,6 +343,8 @@ public class StressMain {
 						"total-time", (taskEndMillis-taskStartMillis)/1000.0,
 						"node-shutdown", elapsedStopTimeMillis/1000.0,
 						"node-startup", elapsedStartTimeMillis/1000.0,
+						"node-recovery", elapsedRecoveryTimeMillis/1000.0,
+						"node-startup-and-recovery", (elapsedStartTimeMillis + elapsedRecoveryTimeMillis)/1000.0,
 						"heap-mb", heap==-1? -1: heap/1024.0/1024.0));
 
 			} else if (type.indexBenchmark != null) {
@@ -449,6 +462,7 @@ public class StressMain {
 						}
 
 						Callable callable = () -> {
+							final int NUM_TRIES = 4;
 							Collection coll = status.getCluster().getCollections().get(name);
 							Set<Integer> nodes = new HashSet<>();
 							for (Shard sh: coll.getShards().values()) {
@@ -463,29 +477,50 @@ public class StressMain {
 							nodeSet = nodeSet.substring(0, nodeSet.length()-1);
 							shardCounter.addAndGet(coll.getShards().size());
 
-							final int COLLECTION_TIMEOUT_SECS = 200;
+							final int COLLECTION_TIMEOUT_SECS = 300;
 
-							try (HttpSolrClient client = new HttpSolrClient.Builder(cloud.nodes.get(nodes.iterator().next()).getBaseUrl()).build();) {
-								Create create = Create.createCollection(name, configSet[0], coll.getShards().size(), 1).
-										setMaxShardsPerNode(coll.getShards().size()).
-										setCreateNodeSet(nodeSet);
-								create.setAsyncId(name);
-
-								Map<String, String> additional = clusterStateBenchmark.collectionCreationParams==null? new HashMap<>(): clusterStateBenchmark.collectionCreationParams;
-								CreateWithAdditionalParameters newCreate = new CreateWithAdditionalParameters(create, name, additional);
-								String asyncId = newCreate.processAsync(name, client);
-								RequestStatusState state = CollectionAdminRequest.requestStatus(asyncId).waitFor(client, COLLECTION_TIMEOUT_SECS);
-								if (state != RequestStatusState.COMPLETED) { // timeout
-									log.error("Waited "+COLLECTION_TIMEOUT_SECS+" seconds, but collection "+name+" failed: "+name+", shards: "+coll.getShards().size());
-									log.error("Collection creation failed, last status on the async task: "
-												+ CollectionAdminRequest.requestStatus(asyncId).process(client).toString());
-									failedCollections.put(name, coll.getShards().size());
+							boolean successful = false;
+							for (int i = 0; (i < NUM_TRIES) && !successful; i++) {
+								if (i != 0) {
+									log.info("Starting additional attempt (number {}) to create collection {}", i+1, name);
 								}
-							} catch (Exception ex) {
-								log.error("Collection creation failed: "+name+", shards: "+coll.getShards().size());
-								failedCollections.put(name, coll.getShards().size());
-								new RuntimeException("Collection creation failed: ", ex).printStackTrace();
+								try (HttpSolrClient client = new HttpSolrClient.Builder(cloud.nodes.get(nodes.iterator().next()).getBaseUrl()).build();) {
+									Create create = Create.createCollection(name, configSet[0], coll.getShards().size(), 1).
+											setMaxShardsPerNode(coll.getShards().size()).
+											setCreateNodeSet(nodeSet);
+									create.setAsyncId(name);
+
+									Map<String, String> additional = clusterStateBenchmark.collectionCreationParams==null? new HashMap<>(): clusterStateBenchmark.collectionCreationParams;
+									CreateWithAdditionalParameters newCreate = new CreateWithAdditionalParameters(create, name, additional);
+									String asyncId = newCreate.processAsync(name, client);
+									RequestStatusState state = CollectionAdminRequest.requestStatus(asyncId).waitFor(client, COLLECTION_TIMEOUT_SECS);
+									if (state != RequestStatusState.COMPLETED) { // timeout
+										log.error("Waited "+COLLECTION_TIMEOUT_SECS+" seconds, but collection "+name+" failed: "+name+", shards: "+coll.getShards().size());
+										log.error("Collection creation failed, last status on the async task: "
+												+ CollectionAdminRequest.requestStatus(asyncId).process(client).toString());
+									} else {
+										successful = true;
+									}
+								} catch (Exception ex) {
+									log.error("Collection creation failed: "+name+", shards: "+coll.getShards().size());
+									new RuntimeException("Collection creation failed: ", ex).printStackTrace();
+								}
+
+								if (! successful) {
+									log.warn("Unable to create collection {} on try number {}; deleting in order to retry", name, i);
+									// Attempt to delete the collection so we might create it again on our next go through the loop
+									try (HttpSolrClient client = new HttpSolrClient.Builder(cloud.nodes.get(nodes.iterator().next()).getBaseUrl()).build()) {
+										CollectionAdminRequest.Delete.deleteCollection(name).process(client);
+									}
+									Thread.sleep(3*1000);
+								}
 							}
+
+							if (! successful) {
+								log.info("Failed to create collection {} after {} tries, giving up on this one...", name, NUM_TRIES);
+								failedCollections.put(name, coll.getShards().size());
+							}
+
 
 							int currentCounter = collectionCounter.incrementAndGet();
 							if (currentCounter % 10 == 0) {

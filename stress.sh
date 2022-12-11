@@ -27,10 +27,13 @@ for i in $@; do :; done
 CONFIGFILE=$i
 
 # commit
-while getopts "c:" option; do
+while getopts "c:s:" option; do
   case $option in
     "c")
       commitoverrides+=("$OPTARG")
+      ;;
+    "s")
+      resultfilesuffix=${OPTARG}
       ;;
     *)
       # any other arguments for future
@@ -229,9 +232,9 @@ fi
 if [ "local" == `jq -r '.["cluster"]["provisioning-method"]' $CONFIGFILE` ];
 then
      mkdir -p $CONFIGFILE_DIR/results
-     cp $CONFIGFILE $CONFIGFILE_DIR/results/configs-$(basename $CONFIGFILE)-$COMMIT.json
-     cp $BASEDIR/results-stress.json $CONFIGFILE_DIR/results/results-$(basename $CONFIGFILE)-$COMMIT.json
-     cp $BASEDIR/metrics-stress.json $CONFIGFILE_DIR/results/metrics-$(basename $CONFIGFILE)-$COMMIT.json
+     cp $CONFIGFILE $CONFIGFILE_DIR/results/$COMMIT-${resultfilesuffix:-}-configs-$(basename $CONFIGFILE).json
+     cp $BASEDIR/results-stress.json $CONFIGFILE_DIR/results/$COMMIT-${resultfilesuffix:-}-results-$(basename $CONFIGFILE).json
+     cp $BASEDIR/metrics-stress.json $CONFIGFILE_DIR/results/$COMMIT-${resultfilesuffix:-}-metrics-$(basename $CONFIGFILE).json
      rm $BASEDIR/results-stress.json $BASEDIR/metrics-stress.json
 fi
 
