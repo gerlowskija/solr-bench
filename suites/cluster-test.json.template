@@ -48,7 +48,7 @@
   },
   "cluster": {
     "num-solr-nodes": 8,
-    "startup-params": "-m 8192m",
+    "startup-params": "-m 4096m",
     "provisioning-method": "local"
   },
   "repository": {
@@ -58,7 +58,7 @@
     "package-subdir": "/solr/packaging/",
     "build-command": "git clean -fdx && cd solr && ../gradlew distTar",
     "submodules": false,
-    "url": "https://github.com/apache/solr",
+    "url": "https://github.com/gerlowskija/solr",
     "user": "ishan"
   },
   "metrics": ["jvm/solr.jvm/memory.heap.usage", "jvm/solr.jvm/threads.count"]
